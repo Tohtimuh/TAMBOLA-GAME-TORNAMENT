@@ -27,6 +27,7 @@ const AppContent: React.FC = () => {
       <main>
         <Routes>
           <Route path="/" element={<Home />} />
+          <Route path="/dashboard" element={<PrivateRoute><Home /></PrivateRoute>} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/wallet" element={<PrivateRoute><WalletPage /></PrivateRoute>} />

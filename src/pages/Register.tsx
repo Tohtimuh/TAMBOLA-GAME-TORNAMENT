@@ -4,7 +4,7 @@ import { motion } from 'motion/react';
 import { Mail, Lock, User, Phone, ArrowRight } from 'lucide-react';
 
 const Register: React.FC = () => {
-  const [formData, setFormData] = useState({ name: '', email: '', mobile: '', password: '' });
+  const [formData, setFormData] = useState({ name: '', mobile: '', password: '' });
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -47,20 +47,6 @@ const Register: React.FC = () => {
                 onChange={e => setFormData({...formData, name: e.target.value})}
                 className="w-full pl-10 pr-4 py-3 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
                 placeholder="John Doe"
-              />
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-bold text-zinc-700 mb-2">Email Address</label>
-            <div className="relative">
-              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-400" />
-              <input
-                type="email"
-                required
-                value={formData.email}
-                onChange={e => setFormData({...formData, email: e.target.value})}
-                className="w-full pl-10 pr-4 py-3 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-                placeholder="name@example.com"
               />
             </div>
           </div>

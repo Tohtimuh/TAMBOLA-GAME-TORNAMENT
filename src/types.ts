@@ -8,8 +8,8 @@ export function cn(...inputs: ClassValue[]) {
 export interface User {
   id: number;
   name: string;
-  email: string;
-  mobile?: string;
+  email?: string;
+  mobile: string;
   balance: number;
   role: 'user' | 'admin';
 }

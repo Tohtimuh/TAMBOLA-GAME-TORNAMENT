@@ -18,8 +18,8 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
-    email TEXT UNIQUE NOT NULL,
-    mobile TEXT UNIQUE,
+    email TEXT UNIQUE,
+    mobile TEXT UNIQUE NOT NULL,
     password TEXT NOT NULL,
     balance REAL DEFAULT 0,
     role TEXT DEFAULT 'user',
@@ -76,12 +76,12 @@ db.exec(`
 `);
 
 // Create initial admin if not exists
-const adminEmail = process.env.ADMIN_EMAIL || "admin@tambola.com";
-const adminExists = db.prepare("SELECT * FROM users WHERE email = ?").get(adminEmail);
+const adminMobile = "9999999999";
+const adminExists = db.prepare("SELECT * FROM users WHERE mobile = ?").get(adminMobile);
 if (!adminExists) {
   const hashedPassword = bcrypt.hashSync(process.env.ADMIN_PASSWORD || "admin123", 10);
-  db.prepare("INSERT INTO users (name, email, password, role, balance) VALUES (?, ?, ?, ?, ?)").run(
-    "Admin", adminEmail, hashedPassword, "admin", 0
+  db.prepare("INSERT INTO users (name, mobile, password, role, balance) VALUES (?, ?, ?, ?, ?)").run(
+    "Admin", adminMobile, hashedPassword, "admin", 0
   );
 }
 
@@ -115,11 +115,11 @@ const isAdmin = (req: any, res: any, next: any) => {
 
 // Auth
 app.post("/api/auth/register", (req, res) => {
-  const { name, email, mobile, password } = req.body;
+  const { name, mobile, password } = req.body;
   try {
     const hashedPassword = bcrypt.hashSync(password, 10);
-    const result = db.prepare("INSERT INTO users (name, email, mobile, password) VALUES (?, ?, ?, ?)").run(
-      name, email, mobile, hashedPassword
+    const result = db.prepare("INSERT INTO users (name, mobile, password) VALUES (?, ?, ?)").run(
+      name, mobile, hashedPassword
     );
     res.json({ id: result.lastInsertRowid });
   } catch (err: any) {
@@ -128,17 +128,17 @@ app.post("/api/auth/register", (req, res) => {
 });
 
 app.post("/api/auth/login", (req, res) => {
-  const { email, password } = req.body;
-  const user: any = db.prepare("SELECT * FROM users WHERE email = ?").get(email);
+  const { mobile, password } = req.body;
+  const user: any = db.prepare("SELECT * FROM users WHERE mobile = ?").get(mobile);
   if (!user || !bcrypt.compareSync(password, user.password)) {
     return res.status(401).json({ error: "Invalid credentials" });
   }
-  const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET);
-  res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role, balance: user.balance } });
+  const token = jwt.sign({ id: user.id, mobile: user.mobile, role: user.role }, JWT_SECRET);
+  res.json({ token, user: { id: user.id, name: user.name, mobile: user.mobile, role: user.role, balance: user.balance } });
 });
 
 app.get("/api/user/profile", authenticate, (req: any, res) => {
-  const user = db.prepare("SELECT id, name, email, mobile, balance, role FROM users WHERE id = ?").get(req.user.id);
+  const user = db.prepare("SELECT id, name, mobile, balance, role FROM users WHERE id = ?").get(req.user.id);
   res.json(user);
 });
 
@@ -258,7 +258,7 @@ app.get("/api/admin/stats", authenticate, isAdmin, (req, res) => {
 });
 
 app.get("/api/admin/users", authenticate, isAdmin, (req, res) => {
-  const users = db.prepare("SELECT id, name, email, mobile, balance, role FROM users").all();
+  const users = db.prepare("SELECT id, name, mobile, balance, role FROM users").all();
   res.json(users);
 });
 

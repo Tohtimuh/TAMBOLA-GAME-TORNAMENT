@@ -2,10 +2,10 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../AuthContext';
 import { motion } from 'motion/react';
-import { Mail, Lock, ArrowRight } from 'lucide-react';
+import { Phone, Lock, ArrowRight } from 'lucide-react';
 
 const Login: React.FC = () => {
-  const [email, setEmail] = useState('');
+  const [mobile, setMobile] = useState('');
   const [password, setPassword] = useState('');
   const { login } = useAuth();
   const navigate = useNavigate();
@@ -15,7 +15,7 @@ const Login: React.FC = () => {
     const res = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password })
+      body: JSON.stringify({ mobile, password })
     });
     if (res.ok) {
       const data = await res.json();
@@ -40,16 +40,16 @@ const Login: React.FC = () => {
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
-            <label className="block text-sm font-bold text-zinc-700 mb-2">Email Address</label>
+            <label className="block text-sm font-bold text-zinc-700 mb-2">Mobile Number</label>
             <div className="relative">
-              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-400" />
+              <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-400" />
               <input
-                type="email"
+                type="tel"
                 required
-                value={email}
-                onChange={e => setEmail(e.target.value)}
+                value={mobile}
+                onChange={e => setMobile(e.target.value)}
                 className="w-full pl-10 pr-4 py-3 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-                placeholder="name@example.com"
+                placeholder="+91 98765 43210"
               />
             </div>
           </div>
