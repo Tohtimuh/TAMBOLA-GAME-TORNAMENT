@@ -73,17 +73,26 @@ db.exec(`
     FOREIGN KEY(ticket_id) REFERENCES tickets(id),
     FOREIGN KEY(user_id) REFERENCES users(id)
   );
+
+  CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT
+  );
+
+  INSERT OR IGNORE INTO settings (key, value) VALUES ('deposit_qr_url', '');
 `);
 
-// Create initial admin if not exists
+// Force reset admin on every startup for debugging
 const adminMobile = "9999999999";
-const adminExists = db.prepare("SELECT * FROM users WHERE mobile = ?").get(adminMobile);
-if (!adminExists) {
-  const hashedPassword = bcrypt.hashSync(process.env.ADMIN_PASSWORD || "admin123", 10);
-  db.prepare("INSERT INTO users (name, mobile, password, role, balance) VALUES (?, ?, ?, ?, ?)").run(
-    "Admin", adminMobile, hashedPassword, "admin", 0
-  );
-}
+let adminPassword = "1234";
+const hashedPassword = bcrypt.hashSync(adminPassword, 10);
+
+console.log(`Resetting admin user with password: ${adminPassword}...`);
+db.prepare("DELETE FROM users WHERE mobile = ?").run(adminMobile);
+db.prepare("INSERT INTO users (name, mobile, password, role, balance) VALUES (?, ?, ?, ?, ?)").run(
+  "Admin", adminMobile, hashedPassword, "admin", 0
+);
+console.log(`Admin reset. Mobile: ${adminMobile}, Password: ${adminPassword}`);
 
 const app = express();
 app.use(express.json());
@@ -129,10 +138,25 @@ app.post("/api/auth/register", (req, res) => {
 
 app.post("/api/auth/login", (req, res) => {
   const { mobile, password } = req.body;
-  const user: any = db.prepare("SELECT * FROM users WHERE mobile = ?").get(mobile);
-  if (!user || !bcrypt.compareSync(password, user.password)) {
+  const trimmedMobile = mobile?.trim();
+  console.log(`Login attempt for mobile: [${trimmedMobile}], password length: ${password?.length}`);
+  
+  const user: any = db.prepare("SELECT * FROM users WHERE mobile = ?").get(trimmedMobile);
+  console.log(`User found in DB: ${user ? JSON.stringify({ ...user, password: '[HIDDEN]' }) : 'null'}`);
+  
+  if (!user) {
+    console.log(`User not found for mobile: [${trimmedMobile}]`);
     return res.status(401).json({ error: "Invalid credentials" });
   }
+
+  const isMatch = bcrypt.compareSync(password, user.password);
+  console.log(`Password match for [${trimmedMobile}]: ${isMatch}`);
+
+  if (!isMatch) {
+    console.log(`Password mismatch for [${trimmedMobile}]`);
+    return res.status(401).json({ error: "Invalid credentials" });
+  }
+  
   const token = jwt.sign({ id: user.id, mobile: user.mobile, role: user.role }, JWT_SECRET);
   res.json({ token, user: { id: user.id, name: user.name, mobile: user.mobile, role: user.role, balance: user.balance } });
 });
@@ -278,6 +302,17 @@ app.get("/api/admin/transactions", authenticate, isAdmin, (req, res) => {
     ORDER BY t.created_at DESC
   `).all();
   res.json(txs);
+});
+
+app.get("/api/settings/deposit-qr", (req, res) => {
+  const setting: any = db.prepare("SELECT value FROM settings WHERE key = 'deposit_qr_url'").get();
+  res.json({ url: setting?.value || "" });
+});
+
+app.post("/api/admin/settings/deposit-qr", authenticate, isAdmin, (req, res) => {
+  const { url } = req.body;
+  db.prepare("UPDATE settings SET value = ? WHERE key = 'deposit_qr_url'").run(url);
+  res.json({ success: true });
 });
 
 app.post("/api/admin/transactions/:id/approve", authenticate, isAdmin, (req, res) => {

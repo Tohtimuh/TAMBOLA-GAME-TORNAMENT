@@ -26,12 +26,15 @@ const Navbar: React.FC = () => {
   ];
 
   return (
-    <nav className="bg-white border-b border-zinc-200 sticky top-0 z-50">
+    <nav className="bg-white/80 backdrop-blur-md border-b border-zinc-200 sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
           <div className="flex items-center">
-            <Link to="/" className="flex-shrink-0 flex items-center">
-              <span className="text-2xl font-bold text-indigo-600 tracking-tight">TAMBOLA PRO</span>
+            <Link to="/" className="flex-shrink-0 flex items-center group">
+              <div className="w-10 h-10 bg-gradient-to-br from-indigo-600 to-violet-600 rounded-xl flex items-center justify-center mr-3 shadow-lg shadow-indigo-200 group-hover:rotate-12 transition-transform">
+                <Trophy className="w-6 h-6 text-white" />
+              </div>
+              <span className="text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-violet-600 tracking-tighter">TAMBOLA PRO</span>
             </Link>
             <div className="hidden sm:ml-8 sm:flex sm:space-x-4">
               {navItems.map((item) => (

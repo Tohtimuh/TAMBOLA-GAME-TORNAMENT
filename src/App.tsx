@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './AuthContext';
+import { Toaster } from 'react-hot-toast';
 import Navbar from './components/Navbar';
 import Home from './pages/Home';
 import Login from './pages/Login';
@@ -22,7 +23,8 @@ const PrivateRoute: React.FC<{ children: React.ReactNode; adminOnly?: boolean }>
 
 const AppContent: React.FC = () => {
   return (
-    <div className="min-h-screen bg-zinc-50 font-sans text-zinc-900">
+    <div className="min-h-screen bg-[radial-gradient(ellipse_at_top_left,_var(--tw-gradient-stops))] from-indigo-50 via-zinc-50 to-white font-sans text-zinc-900">
+      <Toaster position="top-center" />
       <Navbar />
       <main>
         <Routes>

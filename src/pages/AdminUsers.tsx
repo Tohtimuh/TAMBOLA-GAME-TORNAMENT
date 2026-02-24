@@ -18,7 +18,6 @@ const AdminUsers: React.FC = () => {
 
   const filteredUsers = users.filter(u => 
     u.name.toLowerCase().includes(search.toLowerCase()) || 
-    (u.email && u.email.toLowerCase().includes(search.toLowerCase())) ||
     u.mobile.includes(search)
   );
 
@@ -43,7 +42,7 @@ const AdminUsers: React.FC = () => {
           <thead>
             <tr className="bg-zinc-50 text-zinc-500 text-xs font-bold uppercase tracking-wider">
               <th className="px-6 py-4">User</th>
-              <th className="px-6 py-4">Contact</th>
+              <th className="px-6 py-4">Mobile</th>
               <th className="px-6 py-4">Balance</th>
               <th className="px-6 py-4">Role</th>
               <th className="px-6 py-4">Actions</th>
@@ -57,8 +56,7 @@ const AdminUsers: React.FC = () => {
                   <div className="text-xs text-zinc-500">ID: #{u.id}</div>
                 </td>
                 <td className="px-6 py-4">
-                  <div className="text-sm text-zinc-900 font-medium">{u.mobile}</div>
-                  {u.email && <div className="text-xs text-zinc-500">{u.email}</div>}
+                  <div className="text-sm text-zinc-900">{u.mobile}</div>
                 </td>
                 <td className="px-6 py-4 font-bold text-indigo-600">₹{u.balance.toFixed(2)}</td>
                 <td className="px-6 py-4">

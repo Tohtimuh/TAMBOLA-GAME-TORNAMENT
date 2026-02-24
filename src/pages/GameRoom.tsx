@@ -4,6 +4,7 @@ import { useAuth } from '../AuthContext';
 import { Game, Ticket } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { Trophy, Users, Bell, CheckCircle2 } from 'lucide-react';
+import { toast } from 'react-hot-toast';
 
 const GameRoom: React.FC = () => {
   const { id } = useParams();
@@ -71,10 +72,13 @@ const GameRoom: React.FC = () => {
           headers: { Authorization: `Bearer ${token}` }
         }).then(r => r.json());
         setTickets(newTickets);
+        toast.success(`Successfully booked ${bookingCount} ticket(s)!`);
       } else {
         const err = await res.json();
-        alert(err.error);
+        toast.error(err.error || 'Booking failed');
       }
+    } catch (error) {
+      toast.error('Something went wrong');
     } finally {
       setBooking(false);
     }
@@ -97,9 +101,9 @@ const GameRoom: React.FC = () => {
                 <div className="text-sm text-zinc-500 uppercase font-bold tracking-widest mb-1">Last Number</div>
                 <motion.div 
                   key={lastCalled}
-                  initial={{ scale: 1.5, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  className="w-16 h-16 bg-indigo-600 text-white rounded-full flex items-center justify-center text-3xl font-bold shadow-lg"
+                  initial={{ scale: 2, opacity: 0, rotate: -180 }}
+                  animate={{ scale: 1, opacity: 1, rotate: 0 }}
+                  className="w-20 h-20 bg-gradient-to-br from-indigo-600 to-violet-600 text-white rounded-full flex items-center justify-center text-4xl font-black shadow-[0_0_30px_rgba(79,70,229,0.4)] border-4 border-white/20"
                 >
                   {lastCalled || '--'}
                 </motion.div>
@@ -107,18 +111,29 @@ const GameRoom: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-10 gap-2">
-              {Array.from({ length: 90 }, (_, i) => i + 1).map(num => (
-                <div
-                  key={num}
-                  className={`aspect-square flex items-center justify-center rounded-lg text-sm font-bold transition-all ${
-                    calledNumbers.includes(num)
-                      ? 'bg-indigo-600 text-white scale-105 shadow-md'
-                      : 'bg-zinc-100 text-zinc-400'
-                  }`}
-                >
-                  {num}
-                </div>
-              ))}
+              {Array.from({ length: 90 }, (_, i) => i + 1).map(num => {
+                const isCalled = calledNumbers.includes(num);
+                const rangeColor = 
+                  num <= 18 ? 'bg-rose-500' :
+                  num <= 36 ? 'bg-amber-500' :
+                  num <= 54 ? 'bg-emerald-500' :
+                  num <= 72 ? 'bg-sky-500' : 'bg-violet-500';
+
+                return (
+                  <motion.div
+                    key={num}
+                    initial={false}
+                    animate={isCalled ? { scale: [1, 1.2, 1] } : {}}
+                    className={`aspect-square flex items-center justify-center rounded-lg text-sm font-black transition-all duration-500 ${
+                      isCalled
+                        ? `${rangeColor} text-white shadow-[0_0_15px_rgba(0,0,0,0.1)]`
+                        : 'bg-zinc-100 text-zinc-400'
+                    }`}
+                  >
+                    {num}
+                  </motion.div>
+                );
+              })}
             </div>
           </div>
 
@@ -142,7 +157,7 @@ const GameRoom: React.FC = () => {
                   <button
                     onClick={handleBook}
                     disabled={booking}
-                    className="bg-indigo-600 text-white px-4 py-1.5 rounded-lg text-sm font-bold hover:bg-indigo-700 transition-colors disabled:opacity-50 whitespace-nowrap"
+                    className="bg-gradient-to-r from-indigo-600 to-violet-600 text-white px-4 py-1.5 rounded-lg text-sm font-bold hover:from-indigo-700 hover:to-violet-700 transition-all shadow-md hover:shadow-indigo-200 disabled:opacity-50 whitespace-nowrap"
                   >
                     {booking ? 'Booking...' : `Buy More (₹${(game.ticket_price * bookingCount).toFixed(2)})`}
                   </button>
@@ -185,18 +200,20 @@ const GameRoom: React.FC = () => {
                         {numbers.map((row: number[], rIdx: number) => (
                           <div key={rIdx} className="grid grid-cols-9 gap-1">
                             {row.map((num, cIdx) => (
-                              <div
+                              <motion.div
                                 key={cIdx}
-                                className={`aspect-square flex items-center justify-center rounded text-sm font-bold border ${
+                                initial={false}
+                                animate={num !== 0 && calledNumbers.includes(num) ? { scale: [1, 1.1, 1], backgroundColor: '#10b981' } : {}}
+                                className={`aspect-square flex items-center justify-center rounded text-sm font-black border transition-colors duration-500 ${
                                   num === 0 
                                     ? 'bg-zinc-50 border-transparent' 
                                     : calledNumbers.includes(num)
-                                      ? 'bg-emerald-500 border-emerald-600 text-white'
+                                      ? 'bg-emerald-500 border-emerald-600 text-white shadow-[inset_0_0_10px_rgba(0,0,0,0.1)]'
                                       : 'bg-white border-zinc-200 text-zinc-700'
                                 }`}
                               >
                                 {num !== 0 ? num : ''}
-                              </div>
+                              </motion.div>
                             ))}
                           </div>
                         ))}

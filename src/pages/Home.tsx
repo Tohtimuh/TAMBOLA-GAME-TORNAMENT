@@ -20,61 +20,78 @@ const Home: React.FC = () => {
   if (loading) return <div className="flex justify-center items-center h-64">Loading...</div>;
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-      <div className="text-center mb-16">
-        <motion.h1 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="text-5xl font-extrabold text-zinc-900 tracking-tight mb-4"
-        >
-          Tambola Tournaments
-        </motion.h1>
-        <p className="text-xl text-zinc-600 max-w-2xl mx-auto">
-          Join live games, claim your prizes, and become the Tambola champion.
-        </p>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-        {games.map((game, index) => (
+    <div className="min-h-screen bg-[radial-gradient(ellipse_at_top_left,_var(--tw-gradient-stops))] from-indigo-50 via-zinc-50 to-white">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <div className="text-center mb-16">
           <motion.div
-            key={game.id}
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="inline-block mb-4 px-4 py-1.5 bg-indigo-600/10 text-indigo-600 rounded-full text-sm font-bold tracking-wide uppercase"
+          >
+            Live Tournaments
+          </motion.div>
+          <motion.h1 
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: index * 0.1 }}
-            className="bg-white rounded-2xl border border-zinc-200 overflow-hidden hover:shadow-xl transition-shadow group"
+            className="text-6xl font-black text-zinc-900 tracking-tight mb-6 bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-violet-600"
           >
-            <div className="p-6">
-              <div className="flex justify-between items-start mb-4">
-                <div className="bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider">
-                  {game.status}
+            Tambola Pro
+          </motion.h1>
+          <p className="text-xl text-zinc-600 max-w-2xl mx-auto leading-relaxed">
+            Experience the thrill of live Tambola. Join tournaments, play with friends, and win exciting prizes in real-time.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+          {games.map((game, index) => (
+            <motion.div
+              key={game.id}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: index * 0.1 }}
+              whileHover={{ y: -8 }}
+              className="bg-white rounded-3xl border border-zinc-200 overflow-hidden shadow-sm hover:shadow-2xl hover:shadow-indigo-100 transition-all group relative"
+            >
+              <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-indigo-500 to-violet-500" />
+              <div className="p-8">
+                <div className="flex justify-between items-start mb-6">
+                  <div className="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider">
+                    {game.status}
+                  </div>
+                  <div className="text-3xl font-black text-indigo-600">₹{game.ticket_price}</div>
                 </div>
-                <div className="text-2xl font-bold text-indigo-600">₹{game.ticket_price}</div>
+                <h3 className="text-2xl font-bold text-zinc-900 mb-3 group-hover:text-indigo-600 transition-colors">{game.name}</h3>
+                <div className="space-y-4 mb-8">
+                  <div className="flex items-center text-zinc-500 font-medium">
+                    <div className="w-8 h-8 rounded-lg bg-zinc-100 flex items-center justify-center mr-3">
+                      <Calendar className="w-4 h-4 text-zinc-600" />
+                    </div>
+                    {new Date(game.start_time).toLocaleString()}
+                  </div>
+                  <div className="flex items-center text-zinc-500 font-medium">
+                    <div className="w-8 h-8 rounded-lg bg-zinc-100 flex items-center justify-center mr-3">
+                      <Users className="w-4 h-4 text-zinc-600" />
+                    </div>
+                    Max {game.max_players} Players
+                  </div>
+                  <div className="flex items-center text-zinc-500 font-medium">
+                    <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center mr-3">
+                      <Trophy className="w-4 h-4 text-amber-500" />
+                    </div>
+                    Mega Prize Pool
+                  </div>
+                </div>
+                <Link
+                  to={`/game/${game.id}`}
+                  className="w-full flex items-center justify-center bg-zinc-900 text-white px-6 py-4 rounded-2xl font-bold hover:bg-indigo-600 transition-all shadow-lg hover:shadow-indigo-200 group-hover:bg-indigo-600"
+                >
+                  Join Tournament
+                  <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
+                </Link>
               </div>
-              <h3 className="text-xl font-bold text-zinc-900 mb-2">{game.name}</h3>
-              <div className="space-y-3 mb-6">
-                <div className="flex items-center text-zinc-600 text-sm">
-                  <Calendar className="w-4 h-4 mr-2" />
-                  {new Date(game.start_time).toLocaleString()}
-                </div>
-                <div className="flex items-center text-zinc-600 text-sm">
-                  <Users className="w-4 h-4 mr-2" />
-                  Max {game.max_players} Players
-                </div>
-                <div className="flex items-center text-zinc-600 text-sm">
-                  <Trophy className="w-4 h-4 mr-2 text-amber-500" />
-                  Prize Pool: Custom
-                </div>
-              </div>
-              <Link
-                to={`/game/${game.id}`}
-                className="w-full flex items-center justify-center bg-zinc-900 text-white px-6 py-3 rounded-xl font-semibold hover:bg-indigo-600 transition-colors group-hover:bg-indigo-600"
-              >
-                Join Game
-                <ArrowRight className="w-4 h-4 ml-2" />
-              </Link>
-            </div>
-          </motion.div>
-        ))}
+            </motion.div>
+          ))}
+        </div>
       </div>
     </div>
   );

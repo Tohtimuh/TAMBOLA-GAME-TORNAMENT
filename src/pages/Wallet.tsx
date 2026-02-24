@@ -3,6 +3,7 @@ import { useAuth } from '../AuthContext';
 import { Transaction } from '../types';
 import { Wallet, ArrowUpRight, ArrowDownLeft, History, Clock, CheckCircle2, XCircle } from 'lucide-react';
 import { motion } from 'motion/react';
+import { toast } from 'react-hot-toast';
 
 const WalletPage: React.FC = () => {
   const { user, token } = useAuth();
@@ -10,6 +11,7 @@ const WalletPage: React.FC = () => {
   const [amount, setAmount] = useState('');
   const [details, setDetails] = useState('');
   const [loading, setLoading] = useState(false);
+  const [qrUrl, setQrUrl] = useState('');
 
   useEffect(() => {
     if (token) {
@@ -19,6 +21,10 @@ const WalletPage: React.FC = () => {
         .then(res => res.json())
         .then(setHistory);
     }
+
+    fetch('/api/settings/deposit-qr')
+      .then(res => res.json())
+      .then(data => setQrUrl(data.url));
   }, [token]);
 
   const handleAction = async (type: 'deposit' | 'withdraw') => {
@@ -34,7 +40,7 @@ const WalletPage: React.FC = () => {
         body: JSON.stringify({ amount: Number(amount), details })
       });
       if (res.ok) {
-        alert(`${type === 'deposit' ? 'Deposit' : 'Withdrawal'} request submitted!`);
+        toast.success(`${type === 'deposit' ? 'Deposit' : 'Withdrawal'} request submitted!`);
         setAmount('');
         setDetails('');
         // Refresh history
@@ -43,7 +49,12 @@ const WalletPage: React.FC = () => {
         })
           .then(res => res.json())
           .then(setHistory);
+      } else {
+        const err = await res.json();
+        toast.error(err.error || 'Request failed');
       }
+    } catch (error) {
+      toast.error('Something went wrong');
     } finally {
       setLoading(false);
     }
@@ -57,59 +68,79 @@ const WalletPage: React.FC = () => {
           <motion.div 
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-indigo-600 rounded-3xl p-8 text-white shadow-2xl relative overflow-hidden"
+            className="bg-gradient-to-br from-indigo-600 via-indigo-700 to-violet-800 rounded-[2rem] p-8 text-white shadow-2xl shadow-indigo-200 relative overflow-hidden group"
           >
             <div className="relative z-10">
               <div className="flex items-center space-x-2 mb-8 opacity-80">
                 <Wallet className="w-5 h-5" />
                 <span className="text-sm font-bold uppercase tracking-widest">Total Balance</span>
               </div>
-              <div className="text-5xl font-extrabold mb-2 tracking-tight">₹{user?.balance.toFixed(2)}</div>
-              <div className="text-indigo-200 text-sm">Available for tournaments</div>
+              <div className="text-6xl font-black mb-2 tracking-tighter">₹{user?.balance.toFixed(2)}</div>
+              <div className="text-indigo-100/80 text-sm font-medium">Available for tournaments</div>
             </div>
-            {/* Decorative circles */}
-            <div className="absolute -right-12 -bottom-12 w-48 h-48 bg-white/10 rounded-full blur-3xl"></div>
-            <div className="absolute -left-12 -top-12 w-48 h-48 bg-indigo-400/20 rounded-full blur-3xl"></div>
+            {/* Decorative elements */}
+            <div className="absolute -right-12 -bottom-12 w-64 h-64 bg-white/10 rounded-full blur-3xl group-hover:scale-110 transition-transform duration-700"></div>
+            <div className="absolute -left-12 -top-12 w-48 h-48 bg-indigo-400/20 rounded-full blur-3xl group-hover:scale-110 transition-transform duration-700"></div>
           </motion.div>
 
-          <div className="mt-8 bg-white rounded-2xl border border-zinc-200 p-6 shadow-sm">
-            <h3 className="text-lg font-bold text-zinc-900 mb-6">Quick Actions</h3>
-            <div className="space-y-4">
+          {qrUrl && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mt-8 bg-white/80 backdrop-blur-xl rounded-3xl border border-white/20 p-8 shadow-xl text-center relative overflow-hidden"
+            >
+              <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-indigo-500 to-violet-500" />
+              <h3 className="text-lg font-black text-zinc-900 mb-4">Scan to Deposit</h3>
+              <div className="flex justify-center mb-4">
+                <div className="p-3 bg-white rounded-2xl border border-zinc-100 shadow-inner">
+                  <img src={qrUrl} alt="Deposit QR" className="w-48 h-48 object-contain" referrerPolicy="no-referrer" />
+                </div>
+              </div>
+              <p className="text-xs text-zinc-500 font-medium px-4">
+                Scan this QR code using any UPI app to make a deposit. After payment, enter the details below.
+              </p>
+            </motion.div>
+          )}
+
+          <div className="mt-8 bg-white/80 backdrop-blur-xl rounded-3xl border border-white/20 p-8 shadow-xl relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-emerald-500 to-teal-500" />
+            <h3 className="text-xl font-black text-zinc-900 mb-6">Quick Actions</h3>
+            <div className="space-y-6">
               <div>
                 <label className="block text-sm font-bold text-zinc-700 mb-2">Amount (₹)</label>
                 <input
                   type="number"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
-                  className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                  className="w-full px-4 py-4 rounded-2xl border border-zinc-200 focus:ring-2 focus:ring-indigo-500 outline-none transition-all font-bold text-lg"
                   placeholder="0.00"
                 />
               </div>
               <div>
-                <label className="block text-sm font-bold text-zinc-700 mb-2">Payment Details / Bank Info</label>
+                <label className="block text-sm font-bold text-zinc-700 mb-2">Payment Details</label>
                 <textarea
                   value={details}
                   onChange={(e) => setDetails(e.target.value)}
-                  className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                  className="w-full px-4 py-4 rounded-2xl border border-zinc-200 focus:ring-2 focus:ring-indigo-500 outline-none transition-all font-medium"
                   rows={3}
-                  placeholder="UPI ID or Bank Account Details"
+                  placeholder="UPI ID or Bank Details"
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <button
                   onClick={() => handleAction('deposit')}
                   disabled={loading}
-                  className="flex items-center justify-center bg-emerald-600 text-white px-4 py-3 rounded-xl font-bold hover:bg-emerald-700 transition-colors disabled:opacity-50"
+                  className="flex items-center justify-center bg-emerald-600 text-white px-4 py-4 rounded-2xl font-black hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100 disabled:opacity-50 active:scale-95"
                 >
-                  <ArrowUpRight className="w-4 h-4 mr-2" />
+                  <ArrowUpRight className="w-5 h-5 mr-2" />
                   Deposit
                 </button>
                 <button
                   onClick={() => handleAction('withdraw')}
                   disabled={loading}
-                  className="flex items-center justify-center bg-zinc-900 text-white px-4 py-3 rounded-xl font-bold hover:bg-zinc-800 transition-colors disabled:opacity-50"
+                  className="flex items-center justify-center bg-zinc-900 text-white px-4 py-4 rounded-2xl font-black hover:bg-zinc-800 transition-all shadow-lg shadow-zinc-100 disabled:opacity-50 active:scale-95"
                 >
-                  <ArrowDownLeft className="w-4 h-4 mr-2" />
+                  <ArrowDownLeft className="w-5 h-5 mr-2" />
                   Withdraw
                 </button>
               </div>
@@ -119,10 +150,12 @@ const WalletPage: React.FC = () => {
 
         {/* Transaction History */}
         <div className="lg:col-span-2">
-          <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
-            <div className="px-6 py-4 border-b border-zinc-200 flex items-center justify-between">
-              <h3 className="text-lg font-bold text-zinc-900 flex items-center">
-                <History className="w-5 h-5 mr-2 text-indigo-600" />
+          <div className="bg-white/80 backdrop-blur-xl rounded-3xl border border-white/20 shadow-xl overflow-hidden">
+            <div className="px-8 py-6 border-b border-zinc-100 flex items-center justify-between bg-zinc-50/50">
+              <h3 className="text-xl font-black text-zinc-900 flex items-center">
+                <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center mr-3">
+                  <History className="w-5 h-5 text-indigo-600" />
+                </div>
                 Transaction History
               </h3>
             </div>

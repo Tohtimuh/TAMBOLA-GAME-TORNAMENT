@@ -2,34 +2,44 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { Mail, Lock, User, Phone, ArrowRight } from 'lucide-react';
+import { toast } from 'react-hot-toast';
 
 const Register: React.FC = () => {
   const [formData, setFormData] = useState({ name: '', mobile: '', password: '' });
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const res = await fetch('/api/auth/register', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(formData)
-    });
-    if (res.ok) {
-      alert('Registration successful! Please login.');
-      navigate('/login');
-    } else {
-      const err = await res.json();
-      alert(err.error);
+    setLoading(true);
+    try {
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData)
+      });
+      if (res.ok) {
+        toast.success('Registration successful! Please login.');
+        navigate('/login');
+      } else {
+        const err = await res.json();
+        toast.error(err.error || 'Registration failed');
+      }
+    } catch (error) {
+      toast.error('Something went wrong. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-[calc(100vh-64px)] flex items-center justify-center bg-zinc-50 px-4 py-12">
+    <div className="min-h-[calc(100vh-64px)] flex items-center justify-center px-4 py-12">
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="max-w-md w-full bg-white rounded-3xl shadow-xl p-8 border border-zinc-200"
+        className="max-w-md w-full bg-white/80 backdrop-blur-xl rounded-3xl shadow-2xl p-8 border border-white/20 relative overflow-hidden"
       >
+        <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-indigo-600 to-violet-600" />
         <div className="text-center mb-8">
           <h2 className="text-3xl font-bold text-zinc-900 tracking-tight">Create Account</h2>
           <p className="text-zinc-500 mt-2">Join the ultimate Tambola community</p>
@@ -80,10 +90,11 @@ const Register: React.FC = () => {
           </div>
           <button
             type="submit"
-            className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold hover:bg-indigo-700 transition-colors flex items-center justify-center group"
+            disabled={loading}
+            className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold hover:bg-indigo-700 transition-colors flex items-center justify-center group disabled:opacity-50"
           >
-            Create Account
-            <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
+            {loading ? 'Creating Account...' : 'Create Account'}
+            {!loading && <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />}
           </button>
         </form>
 
