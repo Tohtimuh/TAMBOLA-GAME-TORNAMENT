@@ -42,7 +42,7 @@ const Home: React.FC = () => {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-24">
           {games.map((game, index) => (
             <motion.div
               key={game.id}
@@ -90,6 +90,48 @@ const Home: React.FC = () => {
                 </Link>
               </div>
             </motion.div>
+          ))}
+        </div>
+
+        {/* How to Play Section */}
+        <div className="bg-zinc-900 rounded-[3rem] p-12 text-white mb-24 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-600/20 blur-[100px] rounded-full" />
+          <div className="absolute bottom-0 left-0 w-64 h-64 bg-violet-600/20 blur-[100px] rounded-full" />
+          
+          <div className="relative z-10">
+            <h2 className="text-4xl font-black mb-12 text-center">How to Play Tambola</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
+              <div className="space-y-4">
+                <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center text-xl font-black">1</div>
+                <h3 className="text-xl font-bold">Buy Tickets</h3>
+                <p className="text-zinc-400">Choose a tournament and buy your lucky tickets. You can buy multiple tickets to increase your chances.</p>
+              </div>
+              <div className="space-y-4">
+                <div className="w-12 h-12 bg-violet-600 rounded-2xl flex items-center justify-center text-xl font-black">2</div>
+                <h3 className="text-xl font-bold">Join Live Game</h3>
+                <p className="text-zinc-400">Join the game room before the start time. Numbers will be called one by one in real-time.</p>
+              </div>
+              <div className="space-y-4">
+                <div className="w-12 h-12 bg-emerald-600 rounded-2xl flex items-center justify-center text-xl font-black">3</div>
+                <h3 className="text-xl font-bold">Claim Prizes</h3>
+                <p className="text-zinc-400">As numbers match your ticket, claim prizes like Early 5, Lines, or the Full House to win big!</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Quick Stats / Trust Section */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-24">
+          {[
+            { label: 'Active Players', value: '10k+' },
+            { label: 'Daily Games', value: '50+' },
+            { label: 'Total Prizes', value: '₹5L+' },
+            { label: 'Safe & Secure', value: '100%' },
+          ].map((stat, i) => (
+            <div key={i} className="text-center p-8 bg-white rounded-3xl border border-zinc-100 shadow-sm">
+              <div className="text-3xl font-black text-indigo-600 mb-1">{stat.value}</div>
+              <div className="text-sm font-bold text-zinc-400 uppercase tracking-wider">{stat.label}</div>
+            </div>
           ))}
         </div>
       </div>

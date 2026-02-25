@@ -13,6 +13,8 @@ import AdminGames from './pages/AdminGames';
 import AdminUsers from './pages/AdminUsers';
 import AdminTransactions from './pages/AdminTransactions';
 
+import Dashboard from './pages/Dashboard';
+
 const PrivateRoute: React.FC<{ children: React.ReactNode; adminOnly?: boolean }> = ({ children, adminOnly }) => {
   const { user, loading } = useAuth();
   if (loading) return <div>Loading...</div>;
@@ -29,7 +31,7 @@ const AppContent: React.FC = () => {
       <main>
         <Routes>
           <Route path="/" element={<Home />} />
-          <Route path="/dashboard" element={<PrivateRoute><Home /></PrivateRoute>} />
+          <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/wallet" element={<PrivateRoute><WalletPage /></PrivateRoute>} />

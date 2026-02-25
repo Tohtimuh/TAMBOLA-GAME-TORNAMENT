@@ -16,83 +16,9 @@ const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABAS
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// We'll keep the SQLite for now as a fallback or migration source, 
-// but we'll start routing requests to Supabase.
-import Database from "better-sqlite3";
-const db = new Database("tambola.db");
-
-// Initialize Database
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    email TEXT UNIQUE,
-    mobile TEXT UNIQUE NOT NULL,
-    password TEXT NOT NULL,
-    balance REAL DEFAULT 0,
-    role TEXT DEFAULT 'user',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-
-  CREATE TABLE IF NOT EXISTS games (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    ticket_price REAL NOT NULL,
-    prize_pool TEXT NOT NULL, -- JSON string for prize distribution
-    start_time DATETIME NOT NULL,
-    status TEXT DEFAULT 'upcoming', -- upcoming, live, finished
-    called_numbers TEXT DEFAULT '[]', -- JSON array
-    min_players INTEGER DEFAULT 2,
-    max_players INTEGER DEFAULT 100,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-
-  CREATE TABLE IF NOT EXISTS tickets (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    game_id INTEGER,
-    user_id INTEGER,
-    numbers TEXT NOT NULL, -- JSON 2D array
-    status TEXT DEFAULT 'active',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(game_id) REFERENCES games(id),
-    FOREIGN KEY(user_id) REFERENCES users(id)
-  );
-
-  CREATE TABLE IF NOT EXISTS transactions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
-    amount REAL NOT NULL,
-    type TEXT NOT NULL, -- deposit, withdraw, buy_ticket, win
-    status TEXT DEFAULT 'pending', -- pending, approved, rejected, completed
-    details TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(user_id) REFERENCES users(id)
-  );
-
-  CREATE TABLE IF NOT EXISTS claims (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    game_id INTEGER,
-    ticket_id INTEGER,
-    user_id INTEGER,
-    claim_type TEXT NOT NULL, -- early5, top_line, middle_line, bottom_line, full_house
-    status TEXT DEFAULT 'pending',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(game_id) REFERENCES games(id),
-    FOREIGN KEY(ticket_id) REFERENCES tickets(id),
-    FOREIGN KEY(user_id) REFERENCES users(id)
-  );
-
-  CREATE TABLE IF NOT EXISTS settings (
-    key TEXT PRIMARY KEY,
-    value TEXT
-  );
-
-  INSERT OR IGNORE INTO settings (key, value) VALUES ('deposit_qr_url', '');
-`);
-
 // Force reset admin on every startup for debugging
 const adminMobile = "9999999999";
-let adminPassword = "1234";
+const adminPassword = "1234";
 const hashedPassword = bcrypt.hashSync(adminPassword, 10);
 
 async function resetAdmin() {
@@ -115,17 +41,11 @@ async function resetAdmin() {
   } else {
     console.log(`Admin reset in Supabase. Mobile: ${adminMobile}, Password: ${adminPassword}`);
   }
-
-  // Also reset in SQLite for backward compatibility during migration
-  db.prepare("DELETE FROM users WHERE mobile = ?").run(adminMobile);
-  db.prepare("INSERT INTO users (name, mobile, password, role, balance) VALUES (?, ?, ?, ?, ?)").run(
-    "Admin", adminMobile, hashedPassword, "admin", 0
-  );
 }
 
 resetAdmin();
 
-const app = express();
+export const app = express();
 app.use(express.json());
 
 const server = createServer(app);
@@ -170,11 +90,6 @@ app.post("/api/auth/register", async (req, res) => {
       console.error('Supabase Insert Error:', JSON.stringify(error, null, 2));
       throw error;
     }
-
-    // Fallback to SQLite for now
-    db.prepare("INSERT INTO users (name, mobile, password) VALUES (?, ?, ?)").run(
-      name, mobile, hashedPassword
-    );
     
     res.json({ id: data.id });
   } catch (err: any) {
@@ -197,17 +112,7 @@ app.post("/api/auth/login", async (req, res) => {
 
   if (error || !user) {
     console.log(`User not found in Supabase for mobile: [${trimmedMobile}]`);
-    // Fallback to SQLite
-    const sqliteUser: any = db.prepare("SELECT * FROM users WHERE mobile = ?").get(trimmedMobile);
-    if (!sqliteUser) {
-      return res.status(401).json({ error: "Invalid credentials" });
-    }
-    
-    const isMatch = bcrypt.compareSync(password, sqliteUser.password);
-    if (!isMatch) return res.status(401).json({ error: "Invalid credentials" });
-
-    const token = jwt.sign({ id: sqliteUser.id, mobile: sqliteUser.mobile, role: sqliteUser.role }, JWT_SECRET);
-    return res.json({ token, user: { id: sqliteUser.id, name: sqliteUser.name, mobile: sqliteUser.mobile, role: sqliteUser.role, balance: sqliteUser.balance } });
+    return res.status(401).json({ error: "Invalid credentials" });
   }
 
   const isMatch = bcrypt.compareSync(password, user.password);
@@ -230,9 +135,7 @@ app.get("/api/user/profile", authenticate, async (req: any, res) => {
     .single();
   
   if (error || !user) {
-    // Fallback to SQLite
-    const sqliteUser = db.prepare("SELECT id, name, mobile, balance, role FROM users WHERE id = ?").get(req.user.id);
-    return res.json(sqliteUser);
+    return res.status(404).json({ error: "User not found" });
   }
   res.json(user);
 });
@@ -246,8 +149,7 @@ app.get("/api/wallet/history", authenticate, async (req: any, res) => {
     .order('created_at', { ascending: false });
 
   if (error) {
-    const sqliteHistory = db.prepare("SELECT * FROM transactions WHERE user_id = ? ORDER BY created_at DESC").all(req.user.id);
-    return res.json(sqliteHistory);
+    return res.status(500).json({ error: error.message });
   }
   res.json(history);
 });
@@ -259,9 +161,7 @@ app.post("/api/wallet/deposit", authenticate, async (req: any, res) => {
     .insert([{ user_id: req.user.id, amount, type: 'deposit', status: 'pending', details }]);
 
   if (error) {
-    db.prepare("INSERT INTO transactions (user_id, amount, type, status, details) VALUES (?, ?, 'deposit', 'pending', ?)").run(
-      req.user.id, amount, details
-    );
+    return res.status(500).json({ error: error.message });
   }
   res.json({ success: true });
 });
@@ -295,8 +195,7 @@ app.get("/api/games/upcoming", async (req, res) => {
     .order('start_time', { ascending: true });
 
   if (error) {
-    const sqliteGames = db.prepare("SELECT * FROM games WHERE status = 'upcoming' OR status = 'live' ORDER BY start_time ASC").all();
-    return res.json(sqliteGames);
+    return res.status(500).json({ error: error.message });
   }
   res.json(games);
 });
@@ -309,8 +208,7 @@ app.get("/api/games/:id", async (req, res) => {
     .single();
 
   if (error) {
-    const sqliteGame = db.prepare("SELECT * FROM games WHERE id = ?").get(req.params.id);
-    return res.json(sqliteGame);
+    return res.status(404).json({ error: "Game not found" });
   }
   res.json(game);
 });
@@ -418,8 +316,7 @@ app.get("/api/my-tickets/:gameId", authenticate, async (req: any, res) => {
     .eq('user_id', req.user.id);
 
   if (error) {
-    const sqliteTickets = db.prepare("SELECT * FROM tickets WHERE game_id = ? AND user_id = ?").all(req.params.gameId, req.user.id);
-    return res.json(sqliteTickets);
+    return res.status(404).json({ error: "Tickets not found" });
   }
   res.json(tickets);
 });
@@ -702,6 +599,17 @@ app.post("/api/admin/games/:id/call-number", authenticate, isAdmin, async (req, 
   res.json({ success: true });
 });
 
+// System Status
+app.get("/api/supabase/status", async (req, res) => {
+  try {
+    const { data, error } = await supabase.from('users').select('id', { count: 'exact', head: true });
+    if (error) throw error;
+    res.json({ status: "connected" });
+  } catch (err: any) {
+    res.json({ status: "error", message: err.message });
+  }
+});
+
 // Start Server
 async function start() {
   if (process.env.NODE_ENV !== "production") {
@@ -718,9 +626,11 @@ async function start() {
   }
 
   const PORT = 3000;
-  server.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
+  if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
+    server.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server running on http://localhost:${PORT}`);
+    });
+  }
 }
 
 start();
