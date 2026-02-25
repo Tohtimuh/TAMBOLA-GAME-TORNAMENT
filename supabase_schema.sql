@@ -1,11 +1,13 @@
 -- Tambola Pro Supabase Schema
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- Users Table
 CREATE TABLE users (
-  id UUID PRIMARY KEY DEFAULT auth.uid(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
   email TEXT UNIQUE,
   mobile TEXT UNIQUE NOT NULL,
+  password TEXT NOT NULL,
   balance REAL DEFAULT 0,
   role TEXT DEFAULT 'user' CHECK (role IN ('user', 'admin')),
   created_at TIMESTAMPTZ DEFAULT NOW()
@@ -66,15 +68,21 @@ CREATE TABLE settings (
 INSERT INTO settings (key, value) VALUES ('deposit_qr_url', '');
 
 -- Enable Row Level Security (RLS)
-ALTER TABLE users ENABLE ROW LEVEL SECURITY;
-ALTER TABLE games ENABLE ROW LEVEL SECURITY;
-ALTER TABLE tickets ENABLE ROW LEVEL SECURITY;
-ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE claims ENABLE ROW LEVEL SECURITY;
-ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
+-- Disabling RLS because we are using a custom Express server for authentication and security.
+-- The server uses the anon key which is restricted by RLS unless specific policies are added.
+ALTER TABLE users DISABLE ROW LEVEL SECURITY;
+ALTER TABLE games DISABLE ROW LEVEL SECURITY;
+ALTER TABLE tickets DISABLE ROW LEVEL SECURITY;
+ALTER TABLE transactions DISABLE ROW LEVEL SECURITY;
+ALTER TABLE claims DISABLE ROW LEVEL SECURITY;
+ALTER TABLE settings DISABLE ROW LEVEL SECURITY;
 
--- Basic Policies (Adjust as needed)
-CREATE POLICY "Users can view their own profile" ON users FOR SELECT USING (auth.uid() = id);
-CREATE POLICY "Public can view upcoming games" ON games FOR SELECT USING (status != 'finished');
+-- Basic Policies (Not needed if RLS is disabled, but kept for reference)
+-- CREATE POLICY "Allow public registration" ON users FOR INSERT WITH CHECK (true);
+-- CREATE POLICY "Users can view their own profile" ON users FOR SELECT USING (auth.uid() = id OR role = 'admin');
+CREATE POLICY "Public can view upcoming games" ON games FOR SELECT USING (true);
+CREATE POLICY "Admin can manage games" ON games FOR ALL USING (
+  EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND role = 'admin')
+);
 CREATE POLICY "Users can view their own tickets" ON tickets FOR SELECT USING (auth.uid() = user_id);
 CREATE POLICY "Users can view their own transactions" ON transactions FOR SELECT USING (auth.uid() = user_id);

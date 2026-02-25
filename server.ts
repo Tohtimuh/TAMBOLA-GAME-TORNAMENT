@@ -111,7 +111,7 @@ async function resetAdmin() {
   }]);
 
   if (error) {
-    console.error('Error resetting admin in Supabase:', error);
+    console.error('Error resetting admin in Supabase:', JSON.stringify(error, null, 2));
   } else {
     console.log(`Admin reset in Supabase. Mobile: ${adminMobile}, Password: ${adminPassword}`);
   }
@@ -166,7 +166,10 @@ app.post("/api/auth/register", async (req, res) => {
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error('Supabase Insert Error:', JSON.stringify(error, null, 2));
+      throw error;
+    }
 
     // Fallback to SQLite for now
     db.prepare("INSERT INTO users (name, mobile, password) VALUES (?, ?, ?)").run(
