@@ -424,6 +424,129 @@ app.get("/api/my-tickets/:gameId", authenticate, async (req: any, res) => {
   res.json(tickets);
 });
 
+// Claims
+app.post("/api/games/:id/claim", authenticate, async (req: any, res) => {
+  const { ticketId, claimType } = req.body;
+  const gameId = req.params.id;
+
+  // Check if claim already exists for this ticket and type
+  const { data: existingClaim } = await supabase
+    .from('claims')
+    .select('*')
+    .eq('ticket_id', ticketId)
+    .eq('claim_type', claimType)
+    .single();
+
+  if (existingClaim) return res.status(400).json({ error: "Claim already submitted for this ticket" });
+
+  const { data: claim, error } = await supabase
+    .from('claims')
+    .insert([{
+      game_id: gameId,
+      ticket_id: ticketId,
+      user_id: req.user.id,
+      claim_type: claimType,
+      status: 'pending'
+    }])
+    .select()
+    .single();
+
+  if (error) return res.status(500).json({ error: error.message });
+
+  // Broadcast to admin
+  const gameClients = clients.get(parseInt(gameId));
+  if (gameClients) {
+    gameClients.forEach(client => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(JSON.stringify({ type: "CLAIM_SUBMITTED", claim }));
+      }
+    });
+  }
+
+  res.json({ success: true, claimId: claim.id });
+});
+
+app.get("/api/admin/games/:id/claims", authenticate, isAdmin, async (req, res) => {
+  const { data: claims, error } = await supabase
+    .from('claims')
+    .select(`
+      *,
+      users (name),
+      tickets (numbers)
+    `)
+    .eq('game_id', req.params.id)
+    .order('created_at', { ascending: false });
+
+  if (error) return res.status(500).json({ error: error.message });
+
+  // Flatten
+  const formattedClaims = claims?.map(c => ({
+    ...c,
+    user_name: (c as any).users?.name,
+    ticket_numbers: (c as any).tickets?.numbers
+  }));
+
+  res.json(formattedClaims || []);
+});
+
+app.post("/api/admin/claims/:id/approve", authenticate, isAdmin, async (req, res) => {
+  const { data: claim, error: claimError } = await supabase
+    .from('claims')
+    .select('*, games(prize_pool)')
+    .eq('id', req.params.id)
+    .single();
+
+  if (claimError || !claim) return res.status(404).json({ error: "Claim not found" });
+  if (claim.status !== 'pending') return res.status(400).json({ error: "Claim already processed" });
+
+  try {
+    // 1. Update claim status
+    await supabase.from('claims').update({ status: 'approved' }).eq('id', req.params.id);
+
+    // 2. Calculate prize (simple logic for now, could be more complex)
+    const prizePool = typeof (claim as any).games.prize_pool === 'string' 
+      ? JSON.parse((claim as any).games.prize_pool) 
+      : (claim as any).games.prize_pool;
+    
+    const prizeAmount = prizePool[claim.claim_type] || 0;
+
+    if (prizeAmount > 0) {
+      // 3. Update user balance
+      const { data: user } = await supabase.from('users').select('balance').eq('id', claim.user_id).single();
+      if (user) {
+        await supabase.from('users').update({ balance: user.balance + prizeAmount }).eq('id', claim.user_id);
+      }
+
+      // 4. Record transaction
+      await supabase.from('transactions').insert([{
+        user_id: claim.user_id,
+        amount: prizeAmount,
+        type: 'win',
+        status: 'completed',
+        details: `Won ${claim.claim_type} in game ${claim.game_id}`
+      }]);
+    }
+
+    // Broadcast to game room
+    const gameClients = clients.get(parseInt(claim.game_id));
+    if (gameClients) {
+      gameClients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(JSON.stringify({ 
+            type: "CLAIM_APPROVED", 
+            claimType: claim.claim_type, 
+            userName: (claim as any).users?.name 
+          }));
+        }
+      });
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to approve claim" });
+  }
+});
+
 // Admin Routes
 app.get("/api/admin/stats", authenticate, isAdmin, async (req, res) => {
   const { count: totalUsers } = await supabase.from('users').select('*', { count: 'exact', head: true }).eq('role', 'user');
