@@ -2,7 +2,7 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import { createServer } from "http";
 import { WebSocketServer, WebSocket } from "ws";
-import Database from "better-sqlite3";
+import { createClient } from "@supabase/supabase-js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import path from "path";
@@ -11,6 +11,14 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+const supabaseUrl = process.env.SUPABASE_URL || "https://pimgdtpvrgdhuhjfdios.supabase.co";
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBpbWdkdHB2cmdkaHVoamZkaW9zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE5MzM1OTksImV4cCI6MjA4NzUwOTU5OX0.NbTse3874yW8Cn8qz5nkY2gQV-1AA4MMJsd46YysI9c";
+
+const supabase = createClient(supabaseUrl, supabaseKey);
+
+// We'll keep the SQLite for now as a fallback or migration source, 
+// but we'll start routing requests to Supabase.
+import Database from "better-sqlite3";
 const db = new Database("tambola.db");
 
 // Initialize Database
@@ -87,12 +95,35 @@ const adminMobile = "9999999999";
 let adminPassword = "1234";
 const hashedPassword = bcrypt.hashSync(adminPassword, 10);
 
-console.log(`Resetting admin user with password: ${adminPassword}...`);
-db.prepare("DELETE FROM users WHERE mobile = ?").run(adminMobile);
-db.prepare("INSERT INTO users (name, mobile, password, role, balance) VALUES (?, ?, ?, ?, ?)").run(
-  "Admin", adminMobile, hashedPassword, "admin", 0
-);
-console.log(`Admin reset. Mobile: ${adminMobile}, Password: ${adminPassword}`);
+async function resetAdmin() {
+  console.log(`Resetting admin user in Supabase with password: ${adminPassword}...`);
+  
+  // Delete existing admin if any
+  await supabase.from('users').delete().eq('mobile', adminMobile);
+  
+  // Insert new admin
+  const { error } = await supabase.from('users').insert([{
+    name: "Admin",
+    mobile: adminMobile,
+    password: hashedPassword,
+    role: "admin",
+    balance: 0
+  }]);
+
+  if (error) {
+    console.error('Error resetting admin in Supabase:', error);
+  } else {
+    console.log(`Admin reset in Supabase. Mobile: ${adminMobile}, Password: ${adminPassword}`);
+  }
+
+  // Also reset in SQLite for backward compatibility during migration
+  db.prepare("DELETE FROM users WHERE mobile = ?").run(adminMobile);
+  db.prepare("INSERT INTO users (name, mobile, password, role, balance) VALUES (?, ?, ?, ?, ?)").run(
+    "Admin", adminMobile, hashedPassword, "admin", 0
+  );
+}
+
+resetAdmin();
 
 const app = express();
 app.use(express.json());
@@ -123,30 +154,57 @@ const isAdmin = (req: any, res: any, next: any) => {
 // --- API Routes ---
 
 // Auth
-app.post("/api/auth/register", (req, res) => {
+app.post("/api/auth/register", async (req, res) => {
   const { name, mobile, password } = req.body;
   try {
     const hashedPassword = bcrypt.hashSync(password, 10);
-    const result = db.prepare("INSERT INTO users (name, mobile, password) VALUES (?, ?, ?)").run(
+    
+    // Insert into Supabase
+    const { data, error } = await supabase
+      .from('users')
+      .insert([{ name, mobile, password: hashedPassword }])
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    // Fallback to SQLite for now
+    db.prepare("INSERT INTO users (name, mobile, password) VALUES (?, ?, ?)").run(
       name, mobile, hashedPassword
     );
-    res.json({ id: result.lastInsertRowid });
+    
+    res.json({ id: data.id });
   } catch (err: any) {
+    console.error('Registration error:', err);
     res.status(400).json({ error: err.message });
   }
 });
 
-app.post("/api/auth/login", (req, res) => {
+app.post("/api/auth/login", async (req, res) => {
   const { mobile, password } = req.body;
   const trimmedMobile = mobile?.trim();
   console.log(`Login attempt for mobile: [${trimmedMobile}], password length: ${password?.length}`);
   
-  const user: any = db.prepare("SELECT * FROM users WHERE mobile = ?").get(trimmedMobile);
-  console.log(`User found in DB: ${user ? JSON.stringify({ ...user, password: '[HIDDEN]' }) : 'null'}`);
-  
-  if (!user) {
-    console.log(`User not found for mobile: [${trimmedMobile}]`);
-    return res.status(401).json({ error: "Invalid credentials" });
+  // Try Supabase first
+  const { data: user, error } = await supabase
+    .from('users')
+    .select('*')
+    .eq('mobile', trimmedMobile)
+    .single();
+
+  if (error || !user) {
+    console.log(`User not found in Supabase for mobile: [${trimmedMobile}]`);
+    // Fallback to SQLite
+    const sqliteUser: any = db.prepare("SELECT * FROM users WHERE mobile = ?").get(trimmedMobile);
+    if (!sqliteUser) {
+      return res.status(401).json({ error: "Invalid credentials" });
+    }
+    
+    const isMatch = bcrypt.compareSync(password, sqliteUser.password);
+    if (!isMatch) return res.status(401).json({ error: "Invalid credentials" });
+
+    const token = jwt.sign({ id: sqliteUser.id, mobile: sqliteUser.mobile, role: sqliteUser.role }, JWT_SECRET);
+    return res.json({ token, user: { id: sqliteUser.id, name: sqliteUser.name, mobile: sqliteUser.mobile, role: sqliteUser.role, balance: sqliteUser.balance } });
   }
 
   const isMatch = bcrypt.compareSync(password, user.password);
@@ -161,61 +219,129 @@ app.post("/api/auth/login", (req, res) => {
   res.json({ token, user: { id: user.id, name: user.name, mobile: user.mobile, role: user.role, balance: user.balance } });
 });
 
-app.get("/api/user/profile", authenticate, (req: any, res) => {
-  const user = db.prepare("SELECT id, name, mobile, balance, role FROM users WHERE id = ?").get(req.user.id);
+app.get("/api/user/profile", authenticate, async (req: any, res) => {
+  const { data: user, error } = await supabase
+    .from('users')
+    .select('id, name, mobile, balance, role')
+    .eq('id', req.user.id)
+    .single();
+  
+  if (error || !user) {
+    // Fallback to SQLite
+    const sqliteUser = db.prepare("SELECT id, name, mobile, balance, role FROM users WHERE id = ?").get(req.user.id);
+    return res.json(sqliteUser);
+  }
   res.json(user);
 });
 
 // Wallet
-app.get("/api/wallet/history", authenticate, (req: any, res) => {
-  const history = db.prepare("SELECT * FROM transactions WHERE user_id = ? ORDER BY created_at DESC").all(req.user.id);
+app.get("/api/wallet/history", authenticate, async (req: any, res) => {
+  const { data: history, error } = await supabase
+    .from('transactions')
+    .select('*')
+    .eq('user_id', req.user.id)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    const sqliteHistory = db.prepare("SELECT * FROM transactions WHERE user_id = ? ORDER BY created_at DESC").all(req.user.id);
+    return res.json(sqliteHistory);
+  }
   res.json(history);
 });
 
-app.post("/api/wallet/deposit", authenticate, (req: any, res) => {
+app.post("/api/wallet/deposit", authenticate, async (req: any, res) => {
   const { amount, details } = req.body;
-  db.prepare("INSERT INTO transactions (user_id, amount, type, status, details) VALUES (?, ?, 'deposit', 'pending', ?)").run(
-    req.user.id, amount, details
-  );
+  const { error } = await supabase
+    .from('transactions')
+    .insert([{ user_id: req.user.id, amount, type: 'deposit', status: 'pending', details }]);
+
+  if (error) {
+    db.prepare("INSERT INTO transactions (user_id, amount, type, status, details) VALUES (?, ?, 'deposit', 'pending', ?)").run(
+      req.user.id, amount, details
+    );
+  }
   res.json({ success: true });
 });
 
-app.post("/api/wallet/withdraw", authenticate, (req: any, res) => {
+app.post("/api/wallet/withdraw", authenticate, async (req: any, res) => {
   const { amount, details } = req.body;
-  const user: any = db.prepare("SELECT balance FROM users WHERE id = ?").get(req.user.id);
+  
+  const { data: user, error: userError } = await supabase
+    .from('users')
+    .select('balance')
+    .eq('id', req.user.id)
+    .single();
+
+  if (userError || !user) return res.status(400).json({ error: "User not found" });
   if (user.balance < amount) return res.status(400).json({ error: "Insufficient balance" });
   
-  db.prepare("INSERT INTO transactions (user_id, amount, type, status, details) VALUES (?, ?, 'withdraw', 'pending', ?)").run(
-    req.user.id, amount, details
-  );
+  const { error } = await supabase
+    .from('transactions')
+    .insert([{ user_id: req.user.id, amount, type: 'withdraw', status: 'pending', details }]);
+
+  if (error) return res.status(500).json({ error: error.message });
   res.json({ success: true });
 });
 
 // Games
-app.get("/api/games/upcoming", (req, res) => {
-  const games = db.prepare("SELECT * FROM games WHERE status = 'upcoming' OR status = 'live' ORDER BY start_time ASC").all();
+app.get("/api/games/upcoming", async (req, res) => {
+  const { data: games, error } = await supabase
+    .from('games')
+    .select('*')
+    .or('status.eq.upcoming,status.eq.live')
+    .order('start_time', { ascending: true });
+
+  if (error) {
+    const sqliteGames = db.prepare("SELECT * FROM games WHERE status = 'upcoming' OR status = 'live' ORDER BY start_time ASC").all();
+    return res.json(sqliteGames);
+  }
   res.json(games);
 });
 
-app.get("/api/games/:id", (req, res) => {
-  const game = db.prepare("SELECT * FROM games WHERE id = ?").get(req.params.id);
+app.get("/api/games/:id", async (req, res) => {
+  const { data: game, error } = await supabase
+    .from('games')
+    .select('*')
+    .eq('id', req.params.id)
+    .single();
+
+  if (error) {
+    const sqliteGame = db.prepare("SELECT * FROM games WHERE id = ?").get(req.params.id);
+    return res.json(sqliteGame);
+  }
   res.json(game);
 });
 
-app.post("/api/games/:id/book", authenticate, (req: any, res) => {
+app.post("/api/games/:id/book", authenticate, async (req: any, res) => {
   const { count } = req.body;
-  const game: any = db.prepare("SELECT * FROM games WHERE id = ?").get(req.params.id);
   
-  if (game.status !== 'upcoming') {
-    return res.status(400).json({ error: "Game has already started or finished" });
-  }
+  // Get game details
+  const { data: game, error: gameError } = await supabase
+    .from('games')
+    .select('*')
+    .eq('id', req.params.id)
+    .single();
+  
+  if (gameError || !game) return res.status(404).json({ error: "Game not found" });
+  if (game.status !== 'upcoming') return res.status(400).json({ error: "Game has already started or finished" });
 
-  const currentTickets: any = db.prepare("SELECT COUNT(*) as count FROM tickets WHERE game_id = ?").get(req.params.id);
-  if (currentTickets.count + count > game.max_players) {
-    return res.status(400).json({ error: "Game is full" });
-  }
+  // Check capacity
+  const { count: ticketCount, error: countError } = await supabase
+    .from('tickets')
+    .select('*', { count: 'exact', head: true })
+    .eq('game_id', req.params.id);
 
-  const user: any = db.prepare("SELECT balance FROM users WHERE id = ?").get(req.user.id);
+  if (countError) return res.status(500).json({ error: "Error checking capacity" });
+  if ((ticketCount || 0) + count > game.max_players) return res.status(400).json({ error: "Game is full" });
+
+  // Check user balance
+  const { data: user, error: userError } = await supabase
+    .from('users')
+    .select('balance')
+    .eq('id', req.user.id)
+    .single();
+
+  if (userError || !user) return res.status(400).json({ error: "User not found" });
   
   const totalCost = game.ticket_price * count;
   if (user.balance < totalCost) return res.status(400).json({ error: "Insufficient balance" });
@@ -224,18 +350,13 @@ app.post("/api/games/:id/book", authenticate, (req: any, res) => {
   const generateTicket = () => {
     const ticket = Array(3).fill(null).map(() => Array(9).fill(0));
     const usedNumbers = new Set();
-    
     for (let row = 0; row < 3; row++) {
       let count = 0;
       const cols = [];
       while (count < 5) {
         const col = Math.floor(Math.random() * 9);
-        if (!cols.includes(col)) {
-          cols.push(col);
-          count++;
-        }
+        if (!cols.includes(col)) { cols.push(col); count++; }
       }
-      
       cols.forEach(col => {
         let num;
         do {
@@ -250,90 +371,150 @@ app.post("/api/games/:id/book", authenticate, (req: any, res) => {
     return ticket;
   };
 
-  db.transaction(() => {
-    db.prepare("UPDATE users SET balance = balance - ? WHERE id = ?").run(totalCost, req.user.id);
-    db.prepare("INSERT INTO transactions (user_id, amount, type, status, details) VALUES (?, ?, 'buy_ticket', 'completed', ?)").run(
-      req.user.id, totalCost, `Bought ${count} tickets for game ${game.name}`
-    );
-    
-    for (let i = 0; i < count; i++) {
-      const ticketNumbers = generateTicket();
-      db.prepare("INSERT INTO tickets (game_id, user_id, numbers) VALUES (?, ?, ?)").run(
-        game.id, req.user.id, JSON.stringify(ticketNumbers)
-      );
-    }
-  })();
+  try {
+    // 1. Deduct balance
+    const { error: updateError } = await supabase
+      .from('users')
+      .update({ balance: user.balance - totalCost })
+      .eq('id', req.user.id);
+    if (updateError) throw updateError;
 
-  res.json({ success: true });
+    // 2. Record transaction
+    await supabase.from('transactions').insert([{
+      user_id: req.user.id,
+      amount: totalCost,
+      type: 'buy_ticket',
+      status: 'completed',
+      details: `Bought ${count} tickets for game ${game.name}`
+    }]);
+
+    // 3. Create tickets
+    const ticketsToInsert = [];
+    for (let i = 0; i < count; i++) {
+      ticketsToInsert.push({
+        game_id: game.id,
+        user_id: req.user.id,
+        numbers: JSON.stringify(generateTicket())
+      });
+    }
+    const { error: ticketInsertError } = await supabase.from('tickets').insert(ticketsToInsert);
+    if (ticketInsertError) throw ticketInsertError;
+
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error('Booking error:', err);
+    res.status(500).json({ error: "Failed to complete booking" });
+  }
 });
 
-app.get("/api/my-tickets/:gameId", authenticate, (req: any, res) => {
-  const tickets = db.prepare("SELECT * FROM tickets WHERE game_id = ? AND user_id = ?").all(req.params.gameId, req.user.id);
+app.get("/api/my-tickets/:gameId", authenticate, async (req: any, res) => {
+  const { data: tickets, error } = await supabase
+    .from('tickets')
+    .select('*')
+    .eq('game_id', req.params.gameId)
+    .eq('user_id', req.user.id);
+
+  if (error) {
+    const sqliteTickets = db.prepare("SELECT * FROM tickets WHERE game_id = ? AND user_id = ?").all(req.params.gameId, req.user.id);
+    return res.json(sqliteTickets);
+  }
   res.json(tickets);
 });
 
 // Admin Routes
-app.get("/api/admin/stats", authenticate, isAdmin, (req, res) => {
-  const totalUsers = db.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'user'").get();
-  const totalGames = db.prepare("SELECT COUNT(*) as count FROM games").get();
-  const totalDeposits = db.prepare("SELECT SUM(amount) as total FROM transactions WHERE type = 'deposit' AND status = 'approved'").get();
-  const totalWithdrawals = db.prepare("SELECT SUM(amount) as total FROM transactions WHERE type = 'withdraw' AND status = 'approved'").get();
-  res.json({ totalUsers, totalGames, totalDeposits, totalWithdrawals });
+app.get("/api/admin/stats", authenticate, isAdmin, async (req, res) => {
+  const { count: totalUsers } = await supabase.from('users').select('*', { count: 'exact', head: true }).eq('role', 'user');
+  const { count: totalGames } = await supabase.from('games').select('*', { count: 'exact', head: true });
+  
+  const { data: deposits } = await supabase.from('transactions').select('amount').eq('type', 'deposit').eq('status', 'approved');
+  const { data: withdrawals } = await supabase.from('transactions').select('amount').eq('type', 'withdraw').eq('status', 'approved');
+
+  const totalDeposits = deposits?.reduce((sum, tx) => sum + tx.amount, 0) || 0;
+  const totalWithdrawals = withdrawals?.reduce((sum, tx) => sum + tx.amount, 0) || 0;
+
+  res.json({ 
+    totalUsers: { count: totalUsers }, 
+    totalGames: { count: totalGames }, 
+    totalDeposits: { total: totalDeposits }, 
+    totalWithdrawals: { total: totalWithdrawals } 
+  });
 });
 
-app.get("/api/admin/users", authenticate, isAdmin, (req, res) => {
-  const users = db.prepare("SELECT id, name, mobile, balance, role FROM users").all();
-  res.json(users);
+app.get("/api/admin/users", authenticate, isAdmin, async (req, res) => {
+  const { data: users, error } = await supabase.from('users').select('id, name, mobile, balance, role');
+  res.json(users || []);
 });
 
-app.post("/api/admin/games", authenticate, isAdmin, (req, res) => {
+app.post("/api/admin/games", authenticate, isAdmin, async (req, res) => {
   const { name, ticket_price, prize_pool, start_time, min_players, max_players } = req.body;
-  const result = db.prepare("INSERT INTO games (name, ticket_price, prize_pool, start_time, min_players, max_players) VALUES (?, ?, ?, ?, ?, ?)").run(
-    name, ticket_price, JSON.stringify(prize_pool), start_time, min_players, max_players
-  );
-  res.json({ id: result.lastInsertRowid });
+  const { data, error } = await supabase
+    .from('games')
+    .insert([{ name, ticket_price, prize_pool, start_time, min_players, max_players }])
+    .select()
+    .single();
+  
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ id: data.id });
 });
 
-app.get("/api/admin/transactions", authenticate, isAdmin, (req, res) => {
-  const txs = db.prepare(`
-    SELECT t.*, u.name as user_name 
-    FROM transactions t 
-    JOIN users u ON t.user_id = u.id 
-    ORDER BY t.created_at DESC
-  `).all();
-  res.json(txs);
+app.get("/api/admin/transactions", authenticate, isAdmin, async (req, res) => {
+  const { data: txs, error } = await supabase
+    .from('transactions')
+    .select(`
+      *,
+      users (name)
+    `)
+    .order('created_at', { ascending: false });
+
+  // Flatten the user name
+  const formattedTxs = txs?.map(tx => ({
+    ...tx,
+    user_name: (tx as any).users?.name
+  }));
+
+  res.json(formattedTxs || []);
 });
 
-app.get("/api/settings/deposit-qr", (req, res) => {
-  const setting: any = db.prepare("SELECT value FROM settings WHERE key = 'deposit_qr_url'").get();
-  res.json({ url: setting?.value || "" });
+app.get("/api/settings/deposit-qr", async (req, res) => {
+  const { data, error } = await supabase.from('settings').select('value').eq('key', 'deposit_qr_url').single();
+  res.json({ url: data?.value || "" });
 });
 
-app.post("/api/admin/settings/deposit-qr", authenticate, isAdmin, (req, res) => {
+app.post("/api/admin/settings/deposit-qr", authenticate, isAdmin, async (req, res) => {
   const { url } = req.body;
-  db.prepare("UPDATE settings SET value = ? WHERE key = 'deposit_qr_url'").run(url);
+  await supabase.from('settings').upsert({ key: 'deposit_qr_url', value: url });
   res.json({ success: true });
 });
 
-app.post("/api/admin/transactions/:id/approve", authenticate, isAdmin, (req, res) => {
-  const tx: any = db.prepare("SELECT * FROM transactions WHERE id = ?").get(req.params.id);
+app.post("/api/admin/transactions/:id/approve", authenticate, isAdmin, async (req, res) => {
+  const { data: tx, error: txError } = await supabase.from('transactions').select('*').eq('id', req.params.id).single();
+  if (txError || !tx) return res.status(404).json({ error: "Transaction not found" });
   if (tx.status !== 'pending') return res.status(400).json({ error: "Already processed" });
 
-  db.transaction(() => {
-    db.prepare("UPDATE transactions SET status = 'approved' WHERE id = ?").run(req.params.id);
-    if (tx.type === 'deposit') {
-      db.prepare("UPDATE users SET balance = balance + ? WHERE id = ?").run(tx.amount, tx.user_id);
-    } else if (tx.type === 'withdraw') {
-      db.prepare("UPDATE users SET balance = balance - ? WHERE id = ?").run(tx.amount, tx.user_id);
+  try {
+    // 1. Update transaction status
+    await supabase.from('transactions').update({ status: 'approved' }).eq('id', req.params.id);
+    
+    // 2. Update user balance
+    const { data: user } = await supabase.from('users').select('balance').eq('id', tx.user_id).single();
+    if (user) {
+      let newBalance = user.balance;
+      if (tx.type === 'deposit') newBalance += tx.amount;
+      else if (tx.type === 'withdraw') newBalance -= tx.amount;
+      
+      await supabase.from('users').update({ balance: newBalance }).eq('id', tx.user_id);
     }
-  })();
-  res.json({ success: true });
+    
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to approve transaction" });
+  }
 });
 
 // WebSocket Logic for Live Game
 const clients = new Map<number, Set<WebSocket>>();
 
-wss.on("connection", (ws, req) => {
+wss.on("connection", async (ws, req) => {
   const url = new URL(req.url!, `http://${req.headers.host}`);
   const gameId = parseInt(url.searchParams.get("gameId") || "0");
   
@@ -342,8 +523,9 @@ wss.on("connection", (ws, req) => {
     clients.get(gameId)!.add(ws);
     
     // Send current state
-    const game: any = db.prepare("SELECT called_numbers FROM games WHERE id = ?").get(gameId);
-    ws.send(JSON.stringify({ type: "INIT", calledNumbers: JSON.parse(game.called_numbers) }));
+    const { data: game } = await supabase.from('games').select('called_numbers').eq('id', gameId).single();
+    const called = typeof game?.called_numbers === 'string' ? JSON.parse(game.called_numbers) : (game?.called_numbers || []);
+    ws.send(JSON.stringify({ type: "INIT", calledNumbers: called }));
   }
 
   ws.on("close", () => {
@@ -353,28 +535,33 @@ wss.on("connection", (ws, req) => {
   });
 });
 
-app.get("/api/admin/games/:id/stats", authenticate, isAdmin, (req, res) => {
-  const ticketCount = db.prepare("SELECT COUNT(*) as count FROM tickets WHERE game_id = ?").get(req.params.id);
-  const game = db.prepare("SELECT ticket_price FROM games WHERE id = ?").get(req.params.id);
-  res.json({ ticketCount: (ticketCount as any).count, totalCollection: (ticketCount as any).count * (game as any).ticket_price });
+app.get("/api/admin/games/:id/stats", authenticate, isAdmin, async (req, res) => {
+  const { count: ticketCount } = await supabase.from('tickets').select('*', { count: 'exact', head: true }).eq('game_id', req.params.id);
+  const { data: game } = await supabase.from('games').select('ticket_price').eq('id', req.params.id).single();
+  
+  res.json({ 
+    ticketCount: ticketCount || 0, 
+    totalCollection: (ticketCount || 0) * (game?.ticket_price || 0) 
+  });
 });
 
-app.post("/api/admin/games/:id/update-prizes", authenticate, isAdmin, (req, res) => {
+app.post("/api/admin/games/:id/update-prizes", authenticate, isAdmin, async (req, res) => {
   const { prize_pool } = req.body;
-  db.prepare("UPDATE games SET prize_pool = ? WHERE id = ?").run(JSON.stringify(prize_pool), req.params.id);
+  await supabase.from('games').update({ prize_pool }).eq('id', req.params.id);
   res.json({ success: true });
 });
 
 // Admin manual number call
-app.post("/api/admin/games/:id/call-number", authenticate, isAdmin, (req, res) => {
+app.post("/api/admin/games/:id/call-number", authenticate, isAdmin, async (req, res) => {
   const { number } = req.body;
-  const game: any = db.prepare("SELECT called_numbers FROM games WHERE id = ?").get(req.params.id);
-  const called = JSON.parse(game.called_numbers);
+  const { data: game, error } = await supabase.from('games').select('called_numbers').eq('id', req.params.id).single();
+  if (error || !game) return res.status(404).json({ error: "Game not found" });
   
+  const called = typeof game.called_numbers === 'string' ? JSON.parse(game.called_numbers) : (game.called_numbers || []);
   if (called.includes(number)) return res.status(400).json({ error: "Number already called" });
   
   called.push(number);
-  db.prepare("UPDATE games SET called_numbers = ?, status = 'live' WHERE id = ?").run(JSON.stringify(called), req.params.id);
+  await supabase.from('games').update({ called_numbers: called, status: 'live' }).eq('id', req.params.id);
   
   // Broadcast to game room
   const gameClients = clients.get(parseInt(req.params.id));

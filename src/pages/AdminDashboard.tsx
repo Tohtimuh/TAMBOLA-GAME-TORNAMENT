@@ -9,6 +9,7 @@ const AdminDashboard: React.FC = () => {
   const [stats, setStats] = useState<any>(null);
   const [qrUrl, setQrUrl] = useState('');
   const [updatingQr, setUpdatingQr] = useState(false);
+  const [supabaseStatus, setSupabaseStatus] = useState<{status: string, message?: string} | null>(null);
 
   useEffect(() => {
     fetch('/api/admin/stats', {
@@ -20,6 +21,10 @@ const AdminDashboard: React.FC = () => {
     fetch('/api/settings/deposit-qr')
       .then(res => res.json())
       .then(data => setQrUrl(data.url));
+
+    fetch('/api/supabase/status')
+      .then(res => res.json())
+      .then(setSupabaseStatus);
   }, [token]);
 
   const handleUpdateQr = async () => {
@@ -142,6 +147,13 @@ const AdminDashboard: React.FC = () => {
                 <span className="text-emerald-400 font-black flex items-center bg-emerald-400/10 px-4 py-1.5 rounded-full">
                   <div className="w-2 h-2 bg-emerald-400 rounded-full mr-2 animate-pulse"></div>
                   Healthy
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-4 border-b border-white/5">
+                <span className="text-zinc-400 font-medium">Supabase Integration</span>
+                <span className={`${supabaseStatus?.status === 'connected' ? 'text-emerald-400 bg-emerald-400/10' : 'text-amber-400 bg-amber-400/10'} font-black flex items-center px-4 py-1.5 rounded-full`}>
+                  <div className={`w-2 h-2 ${supabaseStatus?.status === 'connected' ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'} rounded-full mr-2`}></div>
+                  {supabaseStatus?.status === 'connected' ? 'Connected' : 'Disconnected'}
                 </span>
               </div>
               <div className="flex justify-between items-center py-4 border-b border-white/5">
