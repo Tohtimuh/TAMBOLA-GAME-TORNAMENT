@@ -11,10 +11,14 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const supabaseUrl = process.env.SUPABASE_URL || "https://pimgdtpvrgdhuhjfdios.supabase.co";
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBpbWdkdHB2cmdkaHVoamZkaW9zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE5MzM1OTksImV4cCI6MjA4NzUwOTU5OX0.NbTse3874yW8Cn8qz5nkY2gQV-1AA4MMJsd46YysI9c";
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
 
-const supabase = createClient(supabaseUrl, supabaseKey);
+if (!supabaseUrl || !supabaseKey) {
+  console.error("CRITICAL ERROR: SUPABASE_URL or SUPABASE_KEY is missing from environment variables.");
+}
+
+const supabase = createClient(supabaseUrl || "", supabaseKey || "");
 
 // Force reset admin on every startup for debugging
 const adminMobile = "9999999999";
@@ -22,7 +26,8 @@ const adminPassword = "1234";
 const hashedPassword = bcrypt.hashSync(adminPassword, 10);
 
 async function resetAdmin() {
-  console.log(`Resetting admin user in Supabase with password: ${adminPassword}...`);
+  if (!supabaseUrl || !supabaseKey) return;
+  console.log(`Resetting admin user in Supabase...`);
   
   // Delete existing admin if any
   await supabase.from('users').delete().eq('mobile', adminMobile);
@@ -42,8 +47,6 @@ async function resetAdmin() {
     console.log(`Admin reset in Supabase. Mobile: ${adminMobile}, Password: ${adminPassword}`);
   }
 }
-
-resetAdmin();
 
 export const app = express();
 app.use(express.json());
@@ -599,6 +602,11 @@ app.post("/api/admin/games/:id/call-number", authenticate, isAdmin, async (req, 
   res.json({ success: true });
 });
 
+// Health Check
+app.get("/api/health", (req, res) => {
+  res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
 // System Status
 app.get("/api/supabase/status", async (req, res) => {
   try {
@@ -625,12 +633,11 @@ async function start() {
     });
   }
 
-  const PORT = 3000;
-  if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
-    server.listen(PORT, "0.0.0.0", () => {
-      console.log(`Server running on http://localhost:${PORT}`);
-    });
-  }
+  const PORT = Number(process.env.PORT) || 3000;
+  server.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on port ${PORT}`);
+    resetAdmin(); // Run in background after start
+  });
 }
 
 start();
